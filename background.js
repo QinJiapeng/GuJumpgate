@@ -760,7 +760,7 @@ const FIVE_SIM_OPERATOR = DEFAULT_FIVE_SIM_OPERATOR;
 const PLUS_PAYMENT_METHOD_PAYPAL = 'paypal';
 const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
 const PLUS_PAYMENT_METHOD_GPC_HELPER = 'gpc-helper';
-const DEFAULT_PLUS_PAYMENT_METHOD = PLUS_PAYMENT_METHOD_PAYPAL;
+const DEFAULT_PLUS_PAYMENT_METHOD = PLUS_PAYMENT_METHOD_GOPAY;
 const DISPLAY_TIMEZONE = 'Asia/Shanghai';
 const MICROSOFT_TOKEN_DNR_RULE_ID = 1001;
 const PERSISTENT_ALIAS_STATE_KEYS = [
@@ -800,7 +800,20 @@ function isPlusModeState(state = {}) {
 }
 
 function normalizePlusPaymentMethod(value = '') {
-  return PLUS_PAYMENT_METHOD_PAYPAL;
+  const rootScope = typeof self !== 'undefined' ? self : globalThis;
+  if (rootScope.GoPayUtils?.normalizePlusPaymentMethod) {
+    return rootScope.GoPayUtils.normalizePlusPaymentMethod(value || DEFAULT_PLUS_PAYMENT_METHOD);
+  }
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === PLUS_PAYMENT_METHOD_PAYPAL) {
+    return PLUS_PAYMENT_METHOD_PAYPAL;
+  }
+  if (normalized === PLUS_PAYMENT_METHOD_GPC_HELPER) {
+    return PLUS_PAYMENT_METHOD_GPC_HELPER;
+  }
+  return normalized === PLUS_PAYMENT_METHOD_GOPAY || !normalized
+    ? PLUS_PAYMENT_METHOD_GOPAY
+    : DEFAULT_PLUS_PAYMENT_METHOD;
 }
 
 function normalizeGpcHelperPhoneMode(value = '') {
@@ -2209,7 +2222,20 @@ async function ensureResolvedSignupMethodForRun(options = {}) {
 }
 
 function normalizePlusPaymentMethod(value = '') {
-  return PLUS_PAYMENT_METHOD_PAYPAL;
+  const rootScope = typeof self !== 'undefined' ? self : globalThis;
+  if (rootScope.GoPayUtils?.normalizePlusPaymentMethod) {
+    return rootScope.GoPayUtils.normalizePlusPaymentMethod(value || DEFAULT_PLUS_PAYMENT_METHOD);
+  }
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === PLUS_PAYMENT_METHOD_PAYPAL) {
+    return PLUS_PAYMENT_METHOD_PAYPAL;
+  }
+  if (normalized === PLUS_PAYMENT_METHOD_GPC_HELPER) {
+    return PLUS_PAYMENT_METHOD_GPC_HELPER;
+  }
+  return normalized === PLUS_PAYMENT_METHOD_GOPAY || !normalized
+    ? PLUS_PAYMENT_METHOD_GOPAY
+    : DEFAULT_PLUS_PAYMENT_METHOD;
 }
 
 function normalizeFiveSimCountryId(value, fallback = FIVE_SIM_COUNTRY_ID) {
