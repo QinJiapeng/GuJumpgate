@@ -57,6 +57,17 @@
     const raw = String(value || '').trim();
     addAlias(raw);
 
+    raw
+      .replace(/\[[^\]]+\]/g, ' ')
+      .replace(/\([^)]*\)/g, ' ')
+      .split(/[\/|,;]+/)
+      .forEach(addAlias);
+
+    const bracketMatches = raw.matchAll(/[\[(]([^)\]]+)[)\]]/g);
+    for (const match of bracketMatches) {
+      addAlias(match?.[1]);
+    }
+
     const normalized = normalizeCountryLabel(raw);
     const compact = normalized.replace(/\s+/g, '');
     if (
