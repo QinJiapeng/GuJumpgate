@@ -12017,6 +12017,15 @@ async function skipNode(nodeId) {
     }
   }
 
+  if (normalizedNodeId === 'plus-checkout-create') {
+    return skipNodeFromBackground(normalizedNodeId, {
+      skippedPlusCheckoutCreate: true,
+    }, {
+      logMessage: '步骤 6：已手动跳过创建 Plus Checkout，不再进入 PayPal 支付流程。',
+      reason: '已手动跳过创建 Plus Checkout / PayPal 支付流程。',
+    });
+  }
+
   await setNodeStatus(normalizedNodeId, 'skipped');
   await addLog(`节点 ${normalizedNodeId} 已跳过`, 'warn');
 
@@ -12360,6 +12369,13 @@ const AUTO_RUN_STEP_IDLE_LOG_CHECK_INTERVAL_MS = 5000;
 const HOSTED_CHECKOUT_FINAL_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
 const AUTO_RUN_STEP_IDLE_RESTART_MAX_ATTEMPTS = 3;
 const AUTO_RUN_STEP_IDLE_RESTART_ERROR_PREFIX = 'AUTO_RUN_STEP_IDLE_RESTART::';
+const SKIP_PLUS_CHECKOUT_CREATE_ENABLED = true;
+const SKIP_PLUS_CHECKOUT_PAYMENT_NODE_IDS = [
+  'plus-checkout-billing',
+  'paypal-approve',
+  'plus-checkout-return',
+  'gopay-subscription-confirm',
+];
 const AUTO_RUN_BACKGROUND_COMPLETED_STEPS = new Set([1, 2, 4, 6, 7, 8, 9]);
 const STEP_COMPLETION_SIGNAL_STEPS = new Set([3, 5, 10, 12]);
 const AUTO_RUN_BACKGROUND_COMPLETED_STEP_KEYS = new Set([
@@ -12485,6 +12501,14 @@ function doesStepUseCompletionSignal(step, state = {}) {
   return doesNodeUseCompletionSignal(getNodeIdByStepForState(step, state), state);
 }
 
+function shouldSkipPlusCheckoutCreateNode(nodeId, state = {}) {
+  if (!SKIP_PLUS_CHECKOUT_CREATE_ENABLED) {
+    return false;
+  }
+  const executionKey = getNodeExecutionKeyForState(nodeId, state);
+  return (executionKey || nodeId) === 'plus-checkout-create';
+}
+
 function getAutoRunPreExecutionDelayMsForNode(nodeId, state = {}) {
   const executionKey = getNodeExecutionKeyForState(nodeId, state);
   return AUTO_RUN_PRE_EXECUTION_DELAYS_BY_STEP_KEY.get(executionKey || nodeId) || 0;
@@ -12581,6 +12605,63 @@ async function runCompletedNodeSideEffects(nodeId, payload, completionState, las
   if (nodeId === lastNodeId) {
     await appendAndBroadcastAccountRunRecord('success', completionState);
   }
+}
+
+async function skipNodeFromBackground(nodeId, payload = {}, options = {}) {
+  const normalizedNodeId = String(nodeId || '').trim();
+  if (!normalizedNodeId) {
+    throw new Error('skipNodeFromBackground 缺少 nodeId。');
+  }
+
+  const latestState = await getState();
+  const lastNodeId = getLastNodeIdForState(latestState);
+  const skipPayload = {
+    skipped: true,
+    skippedNodeId: normalizedNodeId,
+    skippedAt: Date.now(),
+    ...(payload && typeof payload === 'object' ? payload : {}),
+  };
+
+  await setNodeStatus(normalizedNodeId, 'skipped');
+  await addLog(options.logMessage || `节点 ${normalizedNodeId} 已跳过`, options.level || 'warn', {
+    nodeId: normalizedNodeId,
+  });
+  if (normalizedNodeId === 'plus-checkout-create') {
+    const activeNodeIds = getNodeIdsForState(latestState);
+    const downstreamSkipped = [];
+    for (const linkedNodeId of SKIP_PLUS_CHECKOUT_PAYMENT_NODE_IDS) {
+      if (!activeNodeIds.includes(linkedNodeId)) {
+        continue;
+      }
+      const linkedStatus = latestState.nodeStatuses?.[linkedNodeId];
+      if (!isStepDoneStatus(linkedStatus) && linkedStatus !== 'running') {
+        await setNodeStatus(linkedNodeId, 'skipped');
+        downstreamSkipped.push(linkedNodeId);
+      }
+    }
+    if (downstreamSkipped.length) {
+      await addLog(`节点 plus-checkout-create 已跳过，支付后续节点 ${downstreamSkipped.join('、')} 也已同时跳过。`, 'warn');
+      await setNodeStatus(normalizedNodeId, 'skipped');
+    }
+  }
+
+  const completionState = normalizedNodeId === lastNodeId ? await getState() : null;
+  try {
+    await handleNodeData(normalizedNodeId, skipPayload);
+    if (normalizedNodeId === lastNodeId) {
+      await appendAndBroadcastAccountRunRecord('success', completionState, options.reason || '');
+    }
+  } catch (error) {
+    await reportCompletedNodeSideEffectError(normalizedNodeId, error);
+  }
+
+  notifyNodeComplete(normalizedNodeId, skipPayload);
+  return {
+    ok: true,
+    nodeId: normalizedNodeId,
+    status: 'skipped',
+    payload: skipPayload,
+  };
 }
 
 async function reportCompletedNodeSideEffectError(nodeId, error) {
@@ -12710,6 +12791,15 @@ async function finalizeDeferredStepExecutionError(step, error) {
 async function executeNodeViaCompletionSignal(nodeId, timeoutMs = 0) {
   const normalizedNodeId = String(nodeId || '').trim();
   const executionState = await getState();
+  if (shouldSkipPlusCheckoutCreateNode(normalizedNodeId, executionState)) {
+    const result = await skipNodeFromBackground(normalizedNodeId, {
+      skippedPlusCheckoutCreate: true,
+    }, {
+      logMessage: '步骤 6：已按配置跳过创建 Plus Checkout，不再进入 PayPal 支付流程。',
+      reason: '已跳过创建 Plus Checkout / PayPal 支付流程。',
+    });
+    return result.payload;
+  }
   const resolvedTimeoutMs = Number(timeoutMs) > 0
     ? timeoutMs
     : getNodeCompletionSignalTimeoutMs(normalizedNodeId, executionState);
@@ -13303,6 +13393,15 @@ async function executeNodeAndWait(nodeId, delayAfter = 2000) {
   }
 
   let executionState = await getState();
+  if (shouldSkipPlusCheckoutCreateNode(normalizedNodeId, executionState)) {
+    await skipNodeFromBackground(normalizedNodeId, {
+      skippedPlusCheckoutCreate: true,
+    }, {
+      logMessage: '步骤 6：已按配置跳过创建 Plus Checkout，不再进入 PayPal 支付流程。',
+      reason: '已跳过创建 Plus Checkout / PayPal 支付流程。',
+    });
+    return null;
+  }
   const step = getStepIdByNodeIdForState(normalizedNodeId, executionState);
   const preExecutionDelayMs = getAutoRunPreExecutionDelayMsForNode(normalizedNodeId, executionState);
   if (preExecutionDelayMs > 0) {
