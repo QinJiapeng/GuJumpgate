@@ -233,16 +233,23 @@ const DEFAULT_STEP_STATUSES = Object.fromEntries(STEP_IDS.map((stepId) => [stepI
 const DEFAULT_NODE_IDS = Array.from(new Set(ALL_STEP_DEFINITIONS
   .map((definition) => String(definition?.key || '').trim())
   .filter(Boolean)));
-const CHECKOUT_ONLY_ACTIVE_NODE_ID = 'plus-checkout-create';
-function buildCheckoutOnlyNodeStatuses(nodeIds = []) {
+const CHECKOUT_SETUP_ACTIVE_NODE_IDS = new Set([
+  'open-chatgpt',
+  'submit-signup-email',
+  'fill-password',
+  'fetch-signup-code',
+  'fill-profile',
+  'plus-checkout-create',
+]);
+function buildCheckoutSetupNodeStatuses(nodeIds = []) {
   return Object.fromEntries(
     (Array.isArray(nodeIds) ? nodeIds : [])
       .map((nodeId) => String(nodeId || '').trim())
       .filter(Boolean)
-      .map((nodeId) => [nodeId, nodeId === CHECKOUT_ONLY_ACTIVE_NODE_ID ? 'pending' : 'skipped'])
+      .map((nodeId) => [nodeId, CHECKOUT_SETUP_ACTIVE_NODE_IDS.has(nodeId) ? 'pending' : 'skipped'])
   );
 }
-const DEFAULT_NODE_STATUSES = buildCheckoutOnlyNodeStatuses(DEFAULT_NODE_IDS);
+const DEFAULT_NODE_STATUSES = buildCheckoutSetupNodeStatuses(DEFAULT_NODE_IDS);
 const NORMAL_STEP_IDS = NORMAL_STEP_DEFINITIONS
   .map((definition) => Number(definition?.id))
   .filter(Number.isFinite)

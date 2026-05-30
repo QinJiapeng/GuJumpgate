@@ -713,16 +713,23 @@ let STEP_IDS = stepDefinitions.map((step) => Number(step.id)).filter(Number.isFi
 let STEP_DEFAULT_STATUSES = Object.fromEntries(STEP_IDS.map((stepId) => [stepId, 'pending']));
 let SKIPPABLE_STEPS = new Set(STEP_IDS);
 let NODE_IDS = workflowNodes.map((node) => String(node.nodeId || '').trim()).filter(Boolean);
-const CHECKOUT_ONLY_ACTIVE_NODE_ID = 'plus-checkout-create';
-function buildCheckoutOnlyNodeStatuses(nodeIds = []) {
+const CHECKOUT_SETUP_ACTIVE_NODE_IDS = new Set([
+  'open-chatgpt',
+  'submit-signup-email',
+  'fill-password',
+  'fetch-signup-code',
+  'fill-profile',
+  'plus-checkout-create',
+]);
+function buildCheckoutSetupNodeStatuses(nodeIds = []) {
   return Object.fromEntries(
     (Array.isArray(nodeIds) ? nodeIds : [])
       .map((nodeId) => String(nodeId || '').trim())
       .filter(Boolean)
-      .map((nodeId) => [nodeId, nodeId === CHECKOUT_ONLY_ACTIVE_NODE_ID ? 'pending' : 'skipped'])
+      .map((nodeId) => [nodeId, CHECKOUT_SETUP_ACTIVE_NODE_IDS.has(nodeId) ? 'pending' : 'skipped'])
   );
 }
-let NODE_DEFAULT_STATUSES = buildCheckoutOnlyNodeStatuses(NODE_IDS);
+let NODE_DEFAULT_STATUSES = buildCheckoutSetupNodeStatuses(NODE_IDS);
 let SKIPPABLE_NODES = new Set(NODE_IDS);
 const AUTO_DELAY_MIN_MINUTES = 1;
 const AUTO_DELAY_MAX_MINUTES = 1440;
@@ -1198,7 +1205,7 @@ function rebuildStepDefinitionState(plusModeEnabled = false, options = {}) {
     NODE_IDS = nextWorkflowNodes.map((node) => String(node.nodeId || '').trim()).filter(Boolean);
   }
   if (typeof NODE_DEFAULT_STATUSES !== 'undefined') {
-    NODE_DEFAULT_STATUSES = buildCheckoutOnlyNodeStatuses(typeof NODE_IDS !== 'undefined' ? NODE_IDS : []);
+    NODE_DEFAULT_STATUSES = buildCheckoutSetupNodeStatuses(typeof NODE_IDS !== 'undefined' ? NODE_IDS : []);
   }
   if (typeof SKIPPABLE_NODES !== 'undefined') {
     SKIPPABLE_NODES = new Set(typeof NODE_IDS !== 'undefined' ? NODE_IDS : []);
