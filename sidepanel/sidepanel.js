@@ -713,7 +713,16 @@ let STEP_IDS = stepDefinitions.map((step) => Number(step.id)).filter(Number.isFi
 let STEP_DEFAULT_STATUSES = Object.fromEntries(STEP_IDS.map((stepId) => [stepId, 'pending']));
 let SKIPPABLE_STEPS = new Set(STEP_IDS);
 let NODE_IDS = workflowNodes.map((node) => String(node.nodeId || '').trim()).filter(Boolean);
-let NODE_DEFAULT_STATUSES = Object.fromEntries(NODE_IDS.map((nodeId) => [nodeId, 'pending']));
+const CHECKOUT_ONLY_ACTIVE_NODE_ID = 'plus-checkout-create';
+function buildCheckoutOnlyNodeStatuses(nodeIds = []) {
+  return Object.fromEntries(
+    (Array.isArray(nodeIds) ? nodeIds : [])
+      .map((nodeId) => String(nodeId || '').trim())
+      .filter(Boolean)
+      .map((nodeId) => [nodeId, nodeId === CHECKOUT_ONLY_ACTIVE_NODE_ID ? 'pending' : 'skipped'])
+  );
+}
+let NODE_DEFAULT_STATUSES = buildCheckoutOnlyNodeStatuses(NODE_IDS);
 let SKIPPABLE_NODES = new Set(NODE_IDS);
 const AUTO_DELAY_MIN_MINUTES = 1;
 const AUTO_DELAY_MAX_MINUTES = 1440;
@@ -1189,7 +1198,7 @@ function rebuildStepDefinitionState(plusModeEnabled = false, options = {}) {
     NODE_IDS = nextWorkflowNodes.map((node) => String(node.nodeId || '').trim()).filter(Boolean);
   }
   if (typeof NODE_DEFAULT_STATUSES !== 'undefined') {
-    NODE_DEFAULT_STATUSES = Object.fromEntries((typeof NODE_IDS !== 'undefined' ? NODE_IDS : []).map((nodeId) => [nodeId, 'pending']));
+    NODE_DEFAULT_STATUSES = buildCheckoutOnlyNodeStatuses(typeof NODE_IDS !== 'undefined' ? NODE_IDS : []);
   }
   if (typeof SKIPPABLE_NODES !== 'undefined') {
     SKIPPABLE_NODES = new Set(typeof NODE_IDS !== 'undefined' ? NODE_IDS : []);

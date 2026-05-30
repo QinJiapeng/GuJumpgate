@@ -233,7 +233,16 @@ const DEFAULT_STEP_STATUSES = Object.fromEntries(STEP_IDS.map((stepId) => [stepI
 const DEFAULT_NODE_IDS = Array.from(new Set(ALL_STEP_DEFINITIONS
   .map((definition) => String(definition?.key || '').trim())
   .filter(Boolean)));
-const DEFAULT_NODE_STATUSES = Object.fromEntries(DEFAULT_NODE_IDS.map((nodeId) => [nodeId, 'pending']));
+const CHECKOUT_ONLY_ACTIVE_NODE_ID = 'plus-checkout-create';
+function buildCheckoutOnlyNodeStatuses(nodeIds = []) {
+  return Object.fromEntries(
+    (Array.isArray(nodeIds) ? nodeIds : [])
+      .map((nodeId) => String(nodeId || '').trim())
+      .filter(Boolean)
+      .map((nodeId) => [nodeId, nodeId === CHECKOUT_ONLY_ACTIVE_NODE_ID ? 'pending' : 'skipped'])
+  );
+}
+const DEFAULT_NODE_STATUSES = buildCheckoutOnlyNodeStatuses(DEFAULT_NODE_IDS);
 const NORMAL_STEP_IDS = NORMAL_STEP_DEFINITIONS
   .map((definition) => Number(definition?.id))
   .filter(Number.isFinite)
@@ -14784,6 +14793,18 @@ async function runAutoSequenceFromNodeGraph(startNodeId, context = {}) {
     );
     throw error;
   };
+
+  if (!continueCurrentAttempt) {
+    const initialProgressState = await getState();
+    const firstUnfinishedNodeId = getFirstUnfinishedNodeId(
+      initialProgressState.nodeStatuses || {},
+      initialProgressState
+    );
+    if (firstUnfinishedNodeId && hasSavedNodeProgress(initialProgressState.nodeStatuses || {}, initialProgressState)) {
+      currentStartNodeId = firstUnfinishedNodeId;
+      continueCurrentAttempt = true;
+    }
+  }
 
   while (true) {
 
