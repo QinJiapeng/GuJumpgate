@@ -5,7 +5,6 @@
   const PLUS_PAYMENT_METHOD_PAYPAL = 'paypal';
   const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
   const PLUS_PAYMENT_METHOD_GPC_HELPER = 'gpc-helper';
-  const DEFAULT_PLUS_PAYMENT_METHOD = PLUS_PAYMENT_METHOD_GOPAY;
   const PLUS_PAYMENT_STEP_KEY = 'paypal-approve';
   const LOCAL_CPA_JSON_NO_RT_PANEL_MODE = 'local-cpa-json-no-rt';
   const PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH = 'oauth';
@@ -57,10 +56,8 @@
     { id: 3, order: 30, key: 'fill-password', title: '填写密码并继续', sourceId: 'openai-auth', driverId: 'content/signup-page', command: 'fill-password' },
     { id: 4, order: 40, key: 'fetch-signup-code', title: '获取注册验证码', sourceId: 'openai-auth', driverId: 'content/signup-page', command: 'submit-verification-code', mailRuleId: 'openai-signup-code' },
     { id: 5, order: 50, key: 'fill-profile', title: '填写姓名和生日', sourceId: 'openai-auth', driverId: 'content/signup-page', command: 'fill-profile' },
-    { id: 6, order: 60, key: 'plus-checkout-create', title: '创建 GoPay Checkout', sourceId: 'plus-checkout', driverId: 'content/plus-checkout', command: 'plus-checkout-create' },
-    { id: 7, order: 70, key: 'plus-checkout-billing', title: '填写账单并提交 GoPay 订单', sourceId: 'plus-checkout', driverId: 'content/plus-checkout', command: 'plus-checkout-billing' },
-    { id: 8, order: 80, key: 'paypal-approve', title: 'GoPay 手机验证与授权', sourceId: 'gopay-flow', driverId: 'content/gopay-flow', command: 'gopay-approve' },
-    { id: 9, order: 90, key: 'plus-checkout-return', title: '订阅回跳确认', sourceId: 'plus-checkout', driverId: 'content/plus-checkout', command: 'plus-checkout-return' },
+    { id: 6, order: 60, key: 'plus-checkout-create', title: '打开 GoPay 订阅页', sourceId: 'plus-checkout', driverId: 'content/plus-checkout', command: 'plus-checkout-create' },
+    { id: 7, order: 70, key: 'gopay-subscription-confirm', title: '等待 GoPay 订阅确认', sourceId: 'gopay-flow', driverId: 'content/gopay-flow', command: 'gopay-subscription-confirm' },
   ];
 
   const PLUS_GPC_PREFIX_STEP_DEFINITIONS = [
@@ -372,16 +369,7 @@
   }
 
   function normalizePlusPaymentMethod(value = '') {
-    const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === PLUS_PAYMENT_METHOD_PAYPAL) {
-      return PLUS_PAYMENT_METHOD_PAYPAL;
-    }
-    if (normalized === PLUS_PAYMENT_METHOD_GPC_HELPER) {
-      return PLUS_PAYMENT_METHOD_GPC_HELPER;
-    }
-    return normalized === PLUS_PAYMENT_METHOD_GOPAY || !normalized
-      ? DEFAULT_PLUS_PAYMENT_METHOD
-      : DEFAULT_PLUS_PAYMENT_METHOD;
+    return PLUS_PAYMENT_METHOD_PAYPAL;
   }
 
   function normalizeSignupMethod(value = '') {

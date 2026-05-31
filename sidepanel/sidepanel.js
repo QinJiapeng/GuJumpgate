@@ -640,7 +640,6 @@ const DEFAULT_GPC_HELPER_API_URL = 'https://your-gpc-helper-domain.example';
 const GPC_HELPER_PORTAL_URL = '';
 const GPC_HELPER_PHONE_MODE_AUTO = 'auto';
 const GPC_HELPER_PHONE_MODE_MANUAL = 'manual';
-const DEFAULT_PLUS_PAYMENT_METHOD = PLUS_PAYMENT_METHOD_GOPAY;
 const DEFAULT_PLUS_PAYMENT_METHOD = PLUS_PAYMENT_METHOD_PAYPAL;
 const PLUS_CHECKOUT_MODE_US_PP = 'us_pp';
 const PLUS_CHECKOUT_MODE_JP_PP = 'jp_pp';
@@ -2708,20 +2707,7 @@ async function persistOperationDelayToggle() {
 }
 
 function normalizePlusPaymentMethod(value = '') {
-  const rootScope = typeof window !== 'undefined' ? window : globalThis;
-  if (rootScope.GoPayUtils?.normalizePlusPaymentMethod) {
-    return rootScope.GoPayUtils.normalizePlusPaymentMethod(value || DEFAULT_PLUS_PAYMENT_METHOD);
-  }
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === PLUS_PAYMENT_METHOD_PAYPAL) {
-    return PLUS_PAYMENT_METHOD_PAYPAL;
-  }
-  if (normalized === PLUS_PAYMENT_METHOD_GPC_HELPER) {
-    return PLUS_PAYMENT_METHOD_GPC_HELPER;
-  }
-  return normalized === PLUS_PAYMENT_METHOD_GOPAY || !normalized
-    ? DEFAULT_PLUS_PAYMENT_METHOD
-    : DEFAULT_PLUS_PAYMENT_METHOD;
+  return typeof PLUS_PAYMENT_METHOD_PAYPAL !== 'undefined' ? PLUS_PAYMENT_METHOD_PAYPAL : 'paypal';
 }
 
 function getSelectedPlusPaymentMethod(state = latestState) {
@@ -18063,7 +18049,7 @@ function validatePlusCheckoutCloudConversionConfig(options = {}) {
       ? selectPlusPaymentMethod.value
       : latestState?.plusPaymentMethod
   );
-  if (method !== PLUS_PAYMENT_METHOD_PAYPAL || !isPlusCheckoutCloudConversionEnabled()) {
+  if (method !== DEFAULT_PLUS_PAYMENT_METHOD || !isPlusCheckoutCloudConversionEnabled()) {
     return { valid: true, message: '' };
   }
 
@@ -18105,7 +18091,7 @@ function updatePlusCheckoutConversionModeUi() {
       ? selectPlusPaymentMethod.value
       : latestState?.plusPaymentMethod
   );
-  const paypalMode = selectedMethod === PLUS_PAYMENT_METHOD_PAYPAL;
+  const paypalMode = selectedMethod === DEFAULT_PLUS_PAYMENT_METHOD;
   const cloudRowsVisible = plusModeEnabled && paypalMode && cloudEnabled;
 
   if (typeof inputPlusCheckoutConversionProxy !== 'undefined' && inputPlusCheckoutConversionProxy) {
