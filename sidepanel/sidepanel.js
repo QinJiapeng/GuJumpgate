@@ -2789,12 +2789,9 @@ function normalizePlusCheckoutProfileValue(profile = {}, fallback = null) {
     hostedCheckoutSmsPoolAutoDisableEnabled: Boolean(
       rawProfile.hostedCheckoutSmsPoolAutoDisableEnabled ?? baseProfile.hostedCheckoutSmsPoolAutoDisableEnabled
     ),
-    hostedCheckoutFirstDirectResendEnabled: Boolean(
-      rawProfile.hostedCheckoutFirstDirectResendEnabled ?? baseProfile.hostedCheckoutFirstDirectResendEnabled
-    ),
-    hostedCheckoutFirstResendWaitSeconds: normalizeHostedCheckoutResendWaitSeconds(
-      rawProfile.hostedCheckoutFirstResendWaitSeconds ?? baseProfile.hostedCheckoutFirstResendWaitSeconds,
-      20
+    hostedCheckoutFirstDirectResendEnabled: false,
+    hostedCheckoutFirstResendWaitSeconds: normalizeHostedCheckoutFirstResendWaitSeconds(
+      rawProfile.hostedCheckoutFirstResendWaitSeconds ?? baseProfile.hostedCheckoutFirstResendWaitSeconds
     ),
     hostedCheckoutSubsequentResendWaitSeconds: normalizeHostedCheckoutResendWaitSeconds(
       rawProfile.hostedCheckoutSubsequentResendWaitSeconds ?? baseProfile.hostedCheckoutSubsequentResendWaitSeconds,
@@ -2827,7 +2824,7 @@ function buildLegacyPlusCheckoutProfileFromState(state = {}) {
     hostedCheckoutSmsPoolText: state?.hostedCheckoutSmsPoolText,
     hostedCheckoutSmsPoolUsage: state?.hostedCheckoutSmsPoolUsage,
     hostedCheckoutSmsPoolAutoDisableEnabled: state?.hostedCheckoutSmsPoolAutoDisableEnabled,
-    hostedCheckoutFirstDirectResendEnabled: state?.hostedCheckoutFirstDirectResendEnabled,
+    hostedCheckoutFirstDirectResendEnabled: false,
     hostedCheckoutFirstResendWaitSeconds: state?.hostedCheckoutFirstResendWaitSeconds,
     hostedCheckoutSubsequentResendWaitSeconds: state?.hostedCheckoutSubsequentResendWaitSeconds,
     hostedCheckoutVerificationResendMaxAttempts: state?.hostedCheckoutVerificationResendMaxAttempts,
@@ -3019,11 +3016,12 @@ function applyPlusCheckoutProfileToInputs(state = latestState, options = {}) {
     inputHostedCheckoutSmsPoolAutoDisableEnabled.checked = Boolean(normalizedState?.hostedCheckoutSmsPoolAutoDisableEnabled);
   }
   if (inputHostedCheckoutFirstDirectResendEnabled) {
-    inputHostedCheckoutFirstDirectResendEnabled.checked = Boolean(normalizedState?.hostedCheckoutFirstDirectResendEnabled);
+    inputHostedCheckoutFirstDirectResendEnabled.checked = false;
+    inputHostedCheckoutFirstDirectResendEnabled.disabled = true;
   }
   if (inputHostedCheckoutFirstResendWaitSeconds) {
     inputHostedCheckoutFirstResendWaitSeconds.value = String(
-      normalizeHostedCheckoutResendWaitSeconds(normalizedState?.hostedCheckoutFirstResendWaitSeconds, 20)
+      normalizeHostedCheckoutFirstResendWaitSeconds(normalizedState?.hostedCheckoutFirstResendWaitSeconds)
     );
   }
   if (inputHostedCheckoutSubsequentResendWaitSeconds) {
@@ -3045,6 +3043,7 @@ function applyPlusCheckoutProfileToInputs(state = latestState, options = {}) {
     inputHostedCheckoutVerificationResendMaxAttempts.value = String(
       normalizeHostedCheckoutVerificationResendMaxAttempts(normalizedState?.hostedCheckoutVerificationResendMaxAttempts, 1)
     );
+    inputHostedCheckoutVerificationResendMaxAttempts.disabled = true;
   }
   setPlusCheckoutConversionProxyTestResult('未测试');
   if (typeof setHostedCheckoutManualCodeDisplay === 'function') {
@@ -3381,7 +3380,7 @@ function normalizePlusHostedCheckoutOauthDelaySeconds(value) {
   return Math.min(3600, Math.max(0, Math.floor(numeric)));
 }
 
-function normalizeHostedCheckoutResendWaitSeconds(value, fallback = 20) {
+function normalizeHostedCheckoutResendWaitSeconds(value, fallback = 30) {
   const rawValue = String(value ?? '').trim();
   const fallbackValue = Math.min(300, Math.max(0, Math.floor(Number(fallback) || 0)));
   if (!rawValue) {
@@ -3396,19 +3395,13 @@ function normalizeHostedCheckoutResendWaitSeconds(value, fallback = 20) {
   return Math.min(300, Math.max(0, Math.floor(numeric)));
 }
 
-function normalizeHostedCheckoutVerificationResendMaxAttempts(value, fallback = 1) {
-  const rawValue = String(value ?? '').trim();
-  const fallbackValue = Math.min(10, Math.max(0, Math.floor(Number(fallback) || 0)));
-  if (!rawValue) {
-    return fallbackValue;
-  }
+function normalizeHostedCheckoutFirstResendWaitSeconds(value) {
+  const normalized = normalizeHostedCheckoutResendWaitSeconds(value, 30);
+  return normalized === 20 ? 30 : normalized;
+}
 
-  const numeric = Number(rawValue);
-  if (!Number.isFinite(numeric)) {
-    return fallbackValue;
-  }
-
-  return Math.min(10, Math.max(0, Math.floor(numeric)));
+function normalizeHostedCheckoutVerificationResendMaxAttempts() {
+  return 0;
 }
 
 function normalizeHostedCheckoutVerificationPollAttempts(value, fallback = 6) {
@@ -5234,12 +5227,10 @@ function collectSettingsPayload() {
     hostedCheckoutSmsPoolAutoDisableEnabled: typeof inputHostedCheckoutSmsPoolAutoDisableEnabled !== 'undefined' && inputHostedCheckoutSmsPoolAutoDisableEnabled
       ? Boolean(inputHostedCheckoutSmsPoolAutoDisableEnabled.checked)
       : false,
-    hostedCheckoutFirstDirectResendEnabled: typeof inputHostedCheckoutFirstDirectResendEnabled !== 'undefined' && inputHostedCheckoutFirstDirectResendEnabled
-      ? Boolean(inputHostedCheckoutFirstDirectResendEnabled.checked)
-      : false,
+    hostedCheckoutFirstDirectResendEnabled: false,
     hostedCheckoutFirstResendWaitSeconds: typeof inputHostedCheckoutFirstResendWaitSeconds !== 'undefined' && inputHostedCheckoutFirstResendWaitSeconds
-      ? normalizeHostedCheckoutResendWaitSeconds(inputHostedCheckoutFirstResendWaitSeconds.value, 20)
-      : 20,
+      ? normalizeHostedCheckoutFirstResendWaitSeconds(inputHostedCheckoutFirstResendWaitSeconds.value)
+      : 30,
     hostedCheckoutSubsequentResendWaitSeconds: typeof inputHostedCheckoutSubsequentResendWaitSeconds !== 'undefined' && inputHostedCheckoutSubsequentResendWaitSeconds
       ? normalizeHostedCheckoutResendWaitSeconds(inputHostedCheckoutSubsequentResendWaitSeconds.value, 25)
       : 25,
@@ -5249,9 +5240,7 @@ function collectSettingsPayload() {
     hostedCheckoutVerificationPollIntervalSeconds: typeof inputHostedCheckoutVerificationPollIntervalSeconds !== 'undefined' && inputHostedCheckoutVerificationPollIntervalSeconds
       ? normalizeHostedCheckoutVerificationPollIntervalSeconds(inputHostedCheckoutVerificationPollIntervalSeconds.value, 5)
       : 5,
-    hostedCheckoutVerificationResendMaxAttempts: typeof inputHostedCheckoutVerificationResendMaxAttempts !== 'undefined' && inputHostedCheckoutVerificationResendMaxAttempts
-      ? normalizeHostedCheckoutVerificationResendMaxAttempts(inputHostedCheckoutVerificationResendMaxAttempts.value, 1)
-      : 1,
+    hostedCheckoutVerificationResendMaxAttempts: 0,
     oauthFlowTimeoutEnabled: typeof inputOAuthFlowTimeoutEnabled !== 'undefined' && inputOAuthFlowTimeoutEnabled
       ? Boolean(inputOAuthFlowTimeoutEnabled.checked)
       : true,
@@ -18006,9 +17995,13 @@ function syncPlusHostedCheckoutOauthDelayInput() {
 }
 
 function syncHostedCheckoutResendSettingsInputs() {
+  if (inputHostedCheckoutFirstDirectResendEnabled) {
+    inputHostedCheckoutFirstDirectResendEnabled.checked = false;
+    inputHostedCheckoutFirstDirectResendEnabled.disabled = true;
+  }
   if (inputHostedCheckoutFirstResendWaitSeconds) {
     inputHostedCheckoutFirstResendWaitSeconds.value = String(
-      normalizeHostedCheckoutResendWaitSeconds(inputHostedCheckoutFirstResendWaitSeconds.value, 20)
+      normalizeHostedCheckoutFirstResendWaitSeconds(inputHostedCheckoutFirstResendWaitSeconds.value)
     );
   }
   if (inputHostedCheckoutSubsequentResendWaitSeconds) {
@@ -18030,6 +18023,7 @@ function syncHostedCheckoutResendSettingsInputs() {
     inputHostedCheckoutVerificationResendMaxAttempts.value = String(
       normalizeHostedCheckoutVerificationResendMaxAttempts(inputHostedCheckoutVerificationResendMaxAttempts.value, 1)
     );
+    inputHostedCheckoutVerificationResendMaxAttempts.disabled = true;
   }
 }
 
@@ -19601,11 +19595,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         inputChatGptApiSmsPoolAutoDisableEnabled.checked = Boolean(message.payload.chatGptApiSmsPoolAutoDisableEnabled);
       }
       if (message.payload.hostedCheckoutFirstDirectResendEnabled !== undefined && inputHostedCheckoutFirstDirectResendEnabled) {
-        inputHostedCheckoutFirstDirectResendEnabled.checked = Boolean(message.payload.hostedCheckoutFirstDirectResendEnabled);
+        inputHostedCheckoutFirstDirectResendEnabled.checked = false;
+        inputHostedCheckoutFirstDirectResendEnabled.disabled = true;
       }
       if (message.payload.hostedCheckoutFirstResendWaitSeconds !== undefined && inputHostedCheckoutFirstResendWaitSeconds) {
         inputHostedCheckoutFirstResendWaitSeconds.value = String(
-          normalizeHostedCheckoutResendWaitSeconds(message.payload.hostedCheckoutFirstResendWaitSeconds, 20)
+          normalizeHostedCheckoutFirstResendWaitSeconds(message.payload.hostedCheckoutFirstResendWaitSeconds)
         );
       }
       if (message.payload.hostedCheckoutSubsequentResendWaitSeconds !== undefined && inputHostedCheckoutSubsequentResendWaitSeconds) {
@@ -19627,6 +19622,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         inputHostedCheckoutVerificationResendMaxAttempts.value = String(
           normalizeHostedCheckoutVerificationResendMaxAttempts(message.payload.hostedCheckoutVerificationResendMaxAttempts, 1)
         );
+        inputHostedCheckoutVerificationResendMaxAttempts.disabled = true;
       }
       if (message.payload.hotmailAliasEnabled !== undefined && inputHotmailAliasEnabled) {
         inputHotmailAliasEnabled.checked = Boolean(message.payload.hotmailAliasEnabled);

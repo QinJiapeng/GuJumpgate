@@ -445,10 +445,10 @@
       <div class="data-row" id="row-hosted-checkout-resend-settings" style="display:none;">
         <span class="data-label">PayPal 接码</span>
         <div class="data-inline data-value-actions hosted-checkout-resend-settings-inline">
-          <label class="hosted-checkout-setting-toggle" title="开启后检测到 PayPal 验证码弹窗 1 秒后先点击 Resend，再进入首次等码窗口">
-            <span class="setting-caption">首次直接重发</span>
+          <label class="hosted-checkout-setting-toggle" title="PayPal 验证码 Resend 已屏蔽，仅等待首次发送的验证码">
+            <span class="setting-caption">重发已屏蔽</span>
             <span class="toggle-switch">
-              <input type="checkbox" id="input-hosted-checkout-first-direct-resend-enabled" />
+              <input type="checkbox" id="input-hosted-checkout-first-direct-resend-enabled" disabled />
               <span class="toggle-switch-track" aria-hidden="true">
                 <span class="toggle-switch-thumb"></span>
               </span>
@@ -457,12 +457,12 @@
           <label class="hosted-checkout-setting-field">
             <span class="setting-caption">首次等码秒</span>
             <input type="number" id="input-hosted-checkout-first-resend-wait-seconds" class="data-input auto-delay-input"
-              value="20" min="0" max="300" step="1" title="第一次检测到验证码弹窗后，先固定等待多少秒，再按轮询设置请求接口" />
+              value="30" min="0" max="300" step="1" title="第一次检测到验证码弹窗后，先固定等待多少秒，再按轮询设置请求接口" />
           </label>
           <label class="hosted-checkout-setting-field">
             <span class="setting-caption">后续等码秒</span>
             <input type="number" id="input-hosted-checkout-subsequent-resend-wait-seconds" class="data-input auto-delay-input"
-              value="25" min="0" max="300" step="1" title="每次 Resend 后，先固定等待多少秒，再按轮询设置请求接口" />
+              value="25" min="0" max="300" step="1" title="保留历史配置字段；PayPal Resend 已屏蔽，不会再次发送验证码" />
           </label>
           <label class="hosted-checkout-setting-field">
             <span class="setting-caption">轮询次数</span>
@@ -477,7 +477,7 @@
           <label class="hosted-checkout-setting-field">
             <span class="setting-caption">重发上限</span>
             <input type="number" id="input-hosted-checkout-verification-resend-max-attempts" class="data-input auto-delay-input"
-              value="1" min="0" max="10" step="1" title="PayPal 验证码 Resend 最多点击几次" />
+              value="0" min="0" max="0" step="1" disabled title="PayPal 验证码 Resend 已屏蔽，固定为 0" />
           </label>
         </div>
       </div>

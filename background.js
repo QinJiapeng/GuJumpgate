@@ -649,10 +649,10 @@ const HOSTED_CHECKOUT_VERIFICATION_POPUP_DELAY_MIN_SECONDS = 0;
 const HOSTED_CHECKOUT_VERIFICATION_POPUP_DELAY_MAX_SECONDS = 60;
 const HOSTED_CHECKOUT_RESEND_WAIT_MIN_SECONDS = 0;
 const HOSTED_CHECKOUT_RESEND_WAIT_MAX_SECONDS = 300;
-const HOSTED_CHECKOUT_FIRST_RESEND_WAIT_DEFAULT_SECONDS = 20;
+const HOSTED_CHECKOUT_FIRST_RESEND_WAIT_DEFAULT_SECONDS = 30;
 const HOSTED_CHECKOUT_SUBSEQUENT_RESEND_WAIT_DEFAULT_SECONDS = 25;
-const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_DEFAULT = 1;
-const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_LIMIT = 10;
+const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_DEFAULT = 0;
+const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_LIMIT = 0;
 const HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS_DEFAULT = 6;
 const HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS_LIMIT = 60;
 const HOSTED_CHECKOUT_VERIFICATION_POLL_INTERVAL_DEFAULT_SECONDS = 5;
@@ -1749,6 +1749,16 @@ function normalizeHostedCheckoutResendWaitSeconds(value, fallback = HOSTED_CHECK
     HOSTED_CHECKOUT_RESEND_WAIT_MAX_SECONDS,
     Math.max(HOSTED_CHECKOUT_RESEND_WAIT_MIN_SECONDS, Math.floor(numeric))
   );
+}
+
+function normalizeHostedCheckoutFirstResendWaitSeconds(value) {
+  const normalized = normalizeHostedCheckoutResendWaitSeconds(
+    value,
+    HOSTED_CHECKOUT_FIRST_RESEND_WAIT_DEFAULT_SECONDS
+  );
+  return normalized === 20
+    ? HOSTED_CHECKOUT_FIRST_RESEND_WAIT_DEFAULT_SECONDS
+    : normalized;
 }
 
 function normalizeHostedCheckoutVerificationResendMaxAttempts(
@@ -3859,10 +3869,7 @@ function normalizePersistentSettingValue(key, value) {
     case 'hostedCheckoutFirstDirectResendEnabled':
       return Boolean(value);
     case 'hostedCheckoutFirstResendWaitSeconds':
-      return normalizeHostedCheckoutResendWaitSeconds(
-        value,
-        PERSISTED_SETTING_DEFAULTS.hostedCheckoutFirstResendWaitSeconds
-      );
+      return normalizeHostedCheckoutFirstResendWaitSeconds(value);
     case 'hostedCheckoutSubsequentResendWaitSeconds':
       return normalizeHostedCheckoutResendWaitSeconds(
         value,

@@ -61,7 +61,7 @@
   const HOSTED_CHECKOUT_SMS_POOL_DISABLE_THRESHOLD = 2;
   const HOSTED_CHECKOUT_RESEND_WAIT_MIN_SECONDS = 0;
   const HOSTED_CHECKOUT_RESEND_WAIT_MAX_SECONDS = 300;
-  const HOSTED_CHECKOUT_FIRST_RESEND_WAIT_DEFAULT_SECONDS = 20;
+  const HOSTED_CHECKOUT_FIRST_RESEND_WAIT_DEFAULT_SECONDS = 30;
   const HOSTED_CHECKOUT_SUBSEQUENT_RESEND_WAIT_DEFAULT_SECONDS = 25;
   const HOSTED_CHECKOUT_PAYPAL_DEFAULT_PHONE = '1234567890';
   const HOSTED_CHECKOUT_SUCCESS_URL_PATTERN = /^https:\/\/(?:chatgpt\.com|www\.chatgpt\.com|chat\.openai\.com)\/(?:backend-api\/)?payments\/success(?:[/?#]|$)/i;
@@ -73,8 +73,8 @@
   const HOSTED_CHECKOUT_CARD_FALLBACK_ERROR_PREFIX = 'HOSTED_CHECKOUT_CARD_FALLBACK::';
   const HOSTED_CHECKOUT_CARD_DECLINED_ERROR_PREFIX = 'HOSTED_CHECKOUT_CARD_DECLINED::';
   const HOSTED_CHECKOUT_VERIFICATION_RESEND_LIMIT_PREFIX = 'HOSTED_CHECKOUT_VERIFICATION_RESEND_LIMIT::';
-  const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_DEFAULT = 1;
-  const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_LIMIT = 10;
+  const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_DEFAULT = 0;
+  const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_LIMIT = 0;
   const PLUS_CHECKOUT_PROFILE_SETTING_KEYS = Object.freeze([
     'hostedCheckoutVerificationUrl',
     'hostedCheckoutPhoneNumber',
@@ -780,6 +780,16 @@
         HOSTED_CHECKOUT_RESEND_WAIT_MAX_SECONDS,
         Math.max(HOSTED_CHECKOUT_RESEND_WAIT_MIN_SECONDS, Math.floor(numeric))
       );
+    }
+
+    function normalizeHostedCheckoutFirstResendWaitSeconds(value) {
+      const normalized = normalizeHostedCheckoutResendWaitSeconds(
+        value,
+        HOSTED_CHECKOUT_FIRST_RESEND_WAIT_DEFAULT_SECONDS
+      );
+      return normalized === 20
+        ? HOSTED_CHECKOUT_FIRST_RESEND_WAIT_DEFAULT_SECONDS
+        : normalized;
     }
 
     function normalizeHostedCheckoutVerificationResendMaxAttempts(
@@ -1635,10 +1645,9 @@ function FindProxyForURL(url, host) {
         selectedHostedSmsPoolPhone: String(selectedSmsEntry?.phone || '').trim(),
         selectedHostedSmsPoolVerificationUrl: String(selectedSmsEntry?.verificationUrl || '').trim(),
         hostedCheckoutSmsPoolAutoDisableEnabled: Boolean(stored?.hostedCheckoutSmsPoolAutoDisableEnabled ?? state?.hostedCheckoutSmsPoolAutoDisableEnabled),
-        hostedCheckoutFirstDirectResendEnabled: Boolean(stored?.hostedCheckoutFirstDirectResendEnabled ?? state?.hostedCheckoutFirstDirectResendEnabled),
-        hostedCheckoutFirstResendWaitSeconds: normalizeHostedCheckoutResendWaitSeconds(
-          stored?.hostedCheckoutFirstResendWaitSeconds ?? state?.hostedCheckoutFirstResendWaitSeconds,
-          HOSTED_CHECKOUT_FIRST_RESEND_WAIT_DEFAULT_SECONDS
+        hostedCheckoutFirstDirectResendEnabled: false,
+        hostedCheckoutFirstResendWaitSeconds: normalizeHostedCheckoutFirstResendWaitSeconds(
+          stored?.hostedCheckoutFirstResendWaitSeconds ?? state?.hostedCheckoutFirstResendWaitSeconds
         ),
         hostedCheckoutSubsequentResendWaitSeconds: normalizeHostedCheckoutResendWaitSeconds(
           stored?.hostedCheckoutSubsequentResendWaitSeconds ?? state?.hostedCheckoutSubsequentResendWaitSeconds,
@@ -1838,12 +1847,9 @@ function FindProxyForURL(url, host) {
       const hostedCheckoutSmsPoolAutoDisableEnabled = Boolean(
         activeProfile.hostedCheckoutSmsPoolAutoDisableEnabled
       );
-      const firstDirectResendEnabled = Boolean(
-        activeProfile.hostedCheckoutFirstDirectResendEnabled
-      );
-      const firstResendWaitSeconds = normalizeHostedCheckoutResendWaitSeconds(
-        activeProfile.hostedCheckoutFirstResendWaitSeconds,
-        HOSTED_CHECKOUT_FIRST_RESEND_WAIT_DEFAULT_SECONDS
+      const firstDirectResendEnabled = false;
+      const firstResendWaitSeconds = normalizeHostedCheckoutFirstResendWaitSeconds(
+        activeProfile.hostedCheckoutFirstResendWaitSeconds
       );
       const subsequentResendWaitSeconds = normalizeHostedCheckoutResendWaitSeconds(
         activeProfile.hostedCheckoutSubsequentResendWaitSeconds,
@@ -2900,6 +2906,7 @@ function FindProxyForURL(url, host) {
       } else {
         const initialCode = await waitForHostedCheckoutVerificationCodeWindow(firstWaitSeconds, {
           label: 'PayPal 首次验证码',
+          allowImmediateResendOnNonCode: usedResendAttempts < maxResendAttempts,
           ...pollOptions,
         });
         if (initialCode) {
