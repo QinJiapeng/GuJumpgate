@@ -83,6 +83,140 @@
       throw new Error('自动运行节点执行器未接入。');
     }
 
+    function normalizeString(value = '') {
+      return String(value || '').trim();
+    }
+
+    function firstNonEmptyString(...values) {
+      for (const value of values) {
+        const normalized = normalizeString(value);
+        if (normalized) {
+          return normalized;
+        }
+      }
+      return '';
+    }
+
+    function collectImportedAccessTokenCandidates(parsed) {
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+      if (parsed && typeof parsed === 'object') {
+        for (const key of ['sessions', 'accounts', 'records', 'items', 'list', 'data']) {
+          if (Array.isArray(parsed[key])) {
+            return parsed[key];
+          }
+        }
+        return [parsed];
+      }
+      return [];
+    }
+
+    function getImportedAccessToken(candidate) {
+      if (typeof candidate === 'string') {
+        return normalizeString(candidate);
+      }
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+        return '';
+      }
+      return firstNonEmptyString(
+        candidate.accessToken,
+        candidate.access_token,
+        candidate.token?.accessToken,
+        candidate.token?.access_token,
+        candidate.credentials?.accessToken,
+        candidate.credentials?.access_token,
+        candidate.session?.accessToken,
+        candidate.session?.access_token
+      );
+    }
+
+    function getImportedAccessTokenEmail(candidate) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+        return '';
+      }
+      return firstNonEmptyString(
+        candidate.user?.email,
+        candidate.email,
+        candidate.session?.user?.email,
+        candidate.credentials?.email,
+        candidate.providerSpecificData?.email
+      );
+    }
+
+    function parseImportedAccessTokenRecords(text = '') {
+      const normalized = String(text || '')
+        .replace(/\r/g, '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join('\n');
+      if (!normalized) {
+        return [];
+      }
+      try {
+        return collectImportedAccessTokenCandidates(JSON.parse(normalized))
+          .filter((candidate) => Boolean(getImportedAccessToken(candidate)));
+      } catch (_) {
+        return normalized
+          .split('\n')
+          .map((line) => {
+            try {
+              return JSON.parse(line);
+            } catch {
+              return line;
+            }
+          })
+          .filter((candidate) => Boolean(getImportedAccessToken(candidate)));
+      }
+    }
+
+    function buildAccessTokenImportNodeStatuses(state = {}) {
+      const statuses = { ...(state?.nodeStatuses || {}) };
+      ['open-chatgpt', 'submit-signup-email', 'fill-password', 'fetch-signup-code', 'fill-profile'].forEach((nodeId) => {
+        const current = normalizeString(statuses[nodeId]).toLowerCase();
+        if (!['completed', 'manual_completed', 'skipped', 'running'].includes(current)) {
+          statuses[nodeId] = 'skipped';
+        }
+      });
+      if (statuses['plus-checkout-create'] !== 'running') {
+        statuses['plus-checkout-create'] = 'pending';
+      }
+      return statuses;
+    }
+
+    async function applyImportedAccessTokenStartIfNeeded(startNodeId, defaultStartNodeId, targetRun) {
+      if (![defaultStartNodeId, 'plus-checkout-create'].includes(startNodeId)) {
+        return startNodeId;
+      }
+      const state = await getState();
+      const records = parseImportedAccessTokenRecords(state?.chatGptAccessTokenImportText || '');
+      if (!records.length) {
+        return startNodeId;
+      }
+      const recordIndex = Math.max(0, Math.floor(Number(targetRun) || 1) - 1);
+      const record = records[recordIndex];
+      if (!record) {
+        throw new Error(`AT JSON 导入池只有 ${records.length} 条，无法执行第 ${targetRun} 轮。`);
+      }
+      const accessToken = getImportedAccessToken(record);
+      if (!accessToken) {
+        throw new Error(`AT JSON 导入池第 ${recordIndex + 1} 条缺少 accessToken。`);
+      }
+      const email = getImportedAccessTokenEmail(record);
+      await setState({
+        accessToken,
+        chatgptAccessToken: accessToken,
+        importedChatGptAccessTokenIndex: recordIndex,
+        importedChatGptAccessTokenTotal: records.length,
+        ...(email ? { email } : {}),
+        nodeStatuses: buildAccessTokenImportNodeStatuses(state),
+        currentNodeId: '',
+      });
+      await addLog(`AT JSON 导入：第 ${recordIndex + 1}/${records.length} 条已加载，步骤 1~5 已跳过，将从步骤 6 继续。`, 'info');
+      return 'plus-checkout-create';
+    }
+
     function createAutoRunRoundSummary(round) {
       return {
         round,
@@ -567,6 +701,11 @@
               plusCheckoutMode: prevState.plusCheckoutMode,
               plusCheckoutProfiles: prevState.plusCheckoutProfiles,
               plusHostedCheckoutOauthDelaySeconds: prevState.plusHostedCheckoutOauthDelaySeconds,
+              plusCheckoutCloudConversionEnabled: prevState.plusCheckoutCloudConversionEnabled,
+              plusCheckoutCloudConversionApiUrl: prevState.plusCheckoutCloudConversionApiUrl,
+              plusCheckoutCloudConversionApiKey: prevState.plusCheckoutCloudConversionApiKey,
+              plusCheckoutConversionProxyUrl: prevState.plusCheckoutConversionProxyUrl,
+              chatGptAccessTokenImportText: prevState.chatGptAccessTokenImportText,
               hostedCheckoutVerificationPopupDelaySeconds: prevState.hostedCheckoutVerificationPopupDelaySeconds,
               hostedCheckoutVerificationUrl: prevState.hostedCheckoutVerificationUrl,
               hostedCheckoutPhoneNumber: prevState.hostedCheckoutPhoneNumber,
@@ -656,6 +795,7 @@
               sessionId,
             });
 
+            startNodeId = await applyImportedAccessTokenStartIfNeeded(startNodeId, defaultStartNodeId, targetRun);
             if (!useExistingProgress && startNodeId === defaultStartNodeId && typeof ensureHotmailMailboxReadyForAutoRunRound === 'function') {
               await ensureHotmailMailboxReadyForAutoRunRound({
                 targetRun,

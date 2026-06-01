@@ -16,6 +16,15 @@
     [PLUS_CHECKOUT_MODE_US_PP]: '美区PP Plus Checkout',
     [PLUS_CHECKOUT_MODE_JP_PP]: '日区PP Plus Checkout',
   });
+  const PLUS_CHECKOUT_PAYLOAD_BASE = {
+    entry_point: 'all_plans_pricing_modal',
+    plan_name: 'chatgptplusplan',
+    promo_campaign: {
+      promo_campaign_id: 'plus-1-month-free',
+      is_coupon_from_query_param: false,
+    },
+  };
+  const DEFAULT_CONVERTED_CHECKOUT_PROCESSOR_ENTITY = 'openai_llc';
   const PLUS_ACCOUNT_ACCESS_STRATEGY_SMS_OAUTH = 'sms_oauth';
   const DEFAULT_GPC_HELPER_API_URL = 'https://your-gpc-helper-domain.example';
   const BUILTIN_PLUS_CHECKOUT_CLOUD_CONVERSION_API_URL = 'https://gujumpgate.zg.fyi/api/checkout';
@@ -672,6 +681,77 @@
       return '';
     }
 
+    function collectImportedAccessTokenCandidates(parsed) {
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+      if (parsed && typeof parsed === 'object') {
+        for (const key of ['sessions', 'accounts', 'records', 'items', 'list', 'data']) {
+          if (Array.isArray(parsed[key])) {
+            return parsed[key];
+          }
+        }
+        return [parsed];
+      }
+      return [];
+    }
+
+    function getImportedAccessToken(candidate) {
+      if (typeof candidate === 'string') {
+        return normalizeString(candidate);
+      }
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+        return '';
+      }
+      return firstNonEmpty(
+        candidate.accessToken,
+        candidate.access_token,
+        candidate.token?.accessToken,
+        candidate.token?.access_token,
+        candidate.credentials?.accessToken,
+        candidate.credentials?.access_token,
+        candidate.session?.accessToken,
+        candidate.session?.access_token
+      );
+    }
+
+    function parseImportedAccessTokenRecords(text = '') {
+      const normalized = String(text || '')
+        .replace(/\r/g, '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join('\n');
+      if (!normalized) {
+        return [];
+      }
+      try {
+        return collectImportedAccessTokenCandidates(JSON.parse(normalized))
+          .filter((candidate) => Boolean(getImportedAccessToken(candidate)));
+      } catch (_) {
+        return normalized
+          .split('\n')
+          .map((line) => {
+            try {
+              return JSON.parse(line);
+            } catch {
+              return line;
+            }
+          })
+          .filter((candidate) => Boolean(getImportedAccessToken(candidate)));
+      }
+    }
+
+    function resolveImportedAccessTokenForState(state = {}) {
+      const directToken = firstNonEmpty(state?.accessToken, state?.chatgptAccessToken);
+      if (directToken) {
+        return directToken;
+      }
+      const records = parseImportedAccessTokenRecords(state?.chatGptAccessTokenImportText || '');
+      const recordIndex = Math.max(0, Math.floor(Number(state?.importedChatGptAccessTokenIndex) || 0));
+      return getImportedAccessToken(records[recordIndex] || records[0]);
+    }
+
     function collectSessionFieldValues(root, targetKeys = []) {
       const normalizedTargets = new Set((Array.isArray(targetKeys) ? targetKeys : []).map((key) => normalizeString(key).toLowerCase()));
       if (!normalizedTargets.size || !root || typeof root !== 'object') {
@@ -881,6 +961,60 @@
       return normalizePlusPaymentMethod(paymentMethod) === PLUS_PAYMENT_METHOD_GOPAY
         ? { country: 'ID', currency: 'IDR' }
         : { country: 'US', currency: 'USD' };
+    }
+
+    function buildDirectPlusCheckoutPayload(paymentMethod = PLUS_PAYMENT_METHOD_PAYPAL) {
+      return {
+        ...JSON.parse(JSON.stringify(PLUS_CHECKOUT_PAYLOAD_BASE)),
+        checkout_ui_mode: normalizePlusPaymentMethod(paymentMethod) === PLUS_PAYMENT_METHOD_PAYPAL ? 'hosted' : 'custom',
+        billing_details: getCheckoutBillingDetailsForPaymentMethod(paymentMethod),
+      };
+    }
+
+    function getCheckoutMerchantPathForPaymentMethod(paymentMethod = PLUS_PAYMENT_METHOD_PAYPAL) {
+      return normalizePlusPaymentMethod(paymentMethod) === PLUS_PAYMENT_METHOD_GOPAY
+        ? 'openai_llc'
+        : 'openai_ie';
+    }
+
+    function buildDirectPlusCheckoutUrl(checkoutSessionId, paymentMethod = PLUS_PAYMENT_METHOD_PAYPAL) {
+      const sessionId = normalizeString(checkoutSessionId);
+      if (!sessionId) {
+        throw new Error('创建 Plus Checkout 失败：未返回 checkout_session_id。');
+      }
+      return `https://chatgpt.com/checkout/${getCheckoutMerchantPathForPaymentMethod(paymentMethod)}/${sessionId}`;
+    }
+
+    function buildDirectConvertedChatGptCheckoutUrl(checkoutSessionId, processorEntity = DEFAULT_CONVERTED_CHECKOUT_PROCESSOR_ENTITY) {
+      const sessionId = normalizeString(checkoutSessionId);
+      const entity = normalizeString(processorEntity) || DEFAULT_CONVERTED_CHECKOUT_PROCESSOR_ENTITY;
+      if (!sessionId) {
+        throw new Error('创建 Plus Checkout 失败：未返回 checkout_session_id。');
+      }
+      return `https://chatgpt.com/checkout/${entity}/${sessionId}`;
+    }
+
+    function findHostedCheckoutUrl(payload = {}) {
+      const stack = [payload];
+      while (stack.length) {
+        const current = stack.shift();
+        if (!current || typeof current !== 'object') {
+          continue;
+        }
+        if (Array.isArray(current)) {
+          stack.push(...current);
+          continue;
+        }
+        for (const value of Object.values(current)) {
+          if (typeof value === 'string' && /^https:\/\/(?:pay\.openai\.com|checkout\.stripe\.com)\/c\/pay\//i.test(value.trim())) {
+            return value.trim();
+          }
+          if (value && typeof value === 'object') {
+            stack.push(value);
+          }
+        }
+      }
+      return '';
     }
 
     function formatCloudCheckoutErrorDetail(value, fallback = '') {
@@ -4297,6 +4431,52 @@ function FindProxyForURL(url, host) {
       };
     }
 
+    async function generateDirectCheckoutFromAccessToken(accessToken = '', paymentMethod = PLUS_PAYMENT_METHOD_PAYPAL) {
+      const token = normalizeString(accessToken);
+      if (!token) {
+        throw new Error('步骤 6：导入 AT 创建 Plus Checkout 失败：缺少 accessToken。');
+      }
+      const normalizedPaymentMethod = normalizePlusPaymentMethod(paymentMethod);
+      const checkoutPayload = buildDirectPlusCheckoutPayload(normalizedPaymentMethod);
+      const { response, data } = await fetchJsonWithTimeout('https://chatgpt.com/backend-api/payments/checkout', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(checkoutPayload),
+      }, 45000);
+
+      if (!response?.ok || !data?.checkout_session_id) {
+        const detail = formatCloudCheckoutErrorDetail(
+          data?.detail || data?.message || data?.error || data,
+          `HTTP ${response?.status || 0}`
+        );
+        throw new Error(`步骤 6：导入 AT 创建 Plus Checkout 失败：${detail}`);
+      }
+
+      const processorEntity = DEFAULT_CONVERTED_CHECKOUT_PROCESSOR_ENTITY;
+      const hostedCheckoutUrl = findHostedCheckoutUrl(data);
+      const chatgptCheckoutUrl = buildDirectConvertedChatGptCheckoutUrl(data.checkout_session_id, processorEntity);
+      const preferredCheckoutUrl = normalizedPaymentMethod === PLUS_PAYMENT_METHOD_PAYPAL
+        ? (hostedCheckoutUrl || chatgptCheckoutUrl)
+        : chatgptCheckoutUrl;
+      return {
+        checkoutUrl: buildDirectPlusCheckoutUrl(data.checkout_session_id, normalizedPaymentMethod),
+        chatgptCheckoutUrl,
+        checkoutSessionId: data.checkout_session_id,
+        processorEntity,
+        hostedCheckoutUrl,
+        convertedCheckoutUrl: chatgptCheckoutUrl,
+        preferredCheckoutUrl,
+        country: checkoutPayload.billing_details.country,
+        currency: checkoutPayload.billing_details.currency,
+        checkoutSource: 'imported-access-token',
+      };
+    }
+
     async function generateCloudCheckoutFromApi(accessToken = '', paymentMethod = PLUS_PAYMENT_METHOD_PAYPAL, state = {}) {
       const token = String(accessToken || '').trim();
       if (!token) {
@@ -4597,11 +4777,18 @@ function FindProxyForURL(url, host) {
         });
 
         const useCloudCheckoutConversion = isPlusCheckoutCloudConversionEnabled(state, paymentMethod);
+        const importedAccessToken = normalizeString(state?.accessToken || state?.chatgptAccessToken);
         let result = null;
         if (useCloudCheckoutConversion) {
           await addLog('步骤 6：已启用云端支付转换，正在读取 accessToken 并请求云端服务生成订阅链接...', 'info');
-          const accessToken = await readCloudCheckoutAccessTokenWithRetry(tabId);
+          if (importedAccessToken) {
+            await addLog('步骤 6：检测到导入的 accessToken，将优先用于云端支付转换。', 'info');
+          }
+          const accessToken = importedAccessToken || await readCloudCheckoutAccessTokenWithRetry(tabId);
           result = await generateCloudCheckoutFromApiWithRetry(accessToken, paymentMethod, state);
+        } else if (importedAccessToken) {
+          await addLog('步骤 6：检测到导入的 accessToken，正在后台直连创建 Plus Checkout...', 'info');
+          result = await generateDirectCheckoutFromAccessToken(importedAccessToken, paymentMethod);
         } else {
           await addLog(
             paymentMethod === PLUS_PAYMENT_METHOD_PAYPAL
@@ -4706,23 +4893,27 @@ function FindProxyForURL(url, host) {
     }
 
     async function executePlusCheckoutCreate(state = {}) {
-      activeVisibleStep = getCheckoutCreateDisplayStep(state);
-      const paymentMethod = normalizePlusPaymentMethod(state?.plusPaymentMethod);
+      const importedAccessToken = resolveImportedAccessTokenForState(state);
+      const effectiveState = importedAccessToken && !firstNonEmpty(state?.accessToken, state?.chatgptAccessToken)
+        ? { ...state, accessToken: importedAccessToken, chatgptAccessToken: importedAccessToken }
+        : state;
+      activeVisibleStep = getCheckoutCreateDisplayStep(effectiveState);
+      const paymentMethod = normalizePlusPaymentMethod(effectiveState?.plusPaymentMethod);
       if (paymentMethod === PLUS_PAYMENT_METHOD_PAYPAL) {
-        const checkoutProfileState = resolveActivePlusCheckoutProfile(state, state);
+        const checkoutProfileState = resolveActivePlusCheckoutProfile(effectiveState, effectiveState);
         await addLog(`步骤 6：当前 PayPal hosted checkout 模式为 ${checkoutProfileState.modeLabel}。`, 'info');
       }
-      await maybeClearPayPalSessionCookiesBeforeCheckoutCreate(state, paymentMethod);
+      await maybeClearPayPalSessionCookiesBeforeCheckoutCreate(effectiveState, paymentMethod);
       if (paymentMethod === PLUS_PAYMENT_METHOD_GPC_HELPER) {
-        await executeGpcCheckoutCreate(state);
+        await executeGpcCheckoutCreate(effectiveState);
         return;
       }
-      const preparedSession = await preparePlusCheckoutSession(state, paymentMethod);
+      const preparedSession = await preparePlusCheckoutSession(effectiveState, paymentMethod);
       if (preparedSession?.alreadyPaid) {
-        await completeCloudCheckoutAlreadyPaid(preparedSession.tabId, preparedSession.result, state);
+        await completeCloudCheckoutAlreadyPaid(preparedSession.tabId, preparedSession.result, effectiveState);
         return;
       }
-      if (shouldWaitForHostedCheckoutSuccess(state, paymentMethod)) {
+      if (shouldWaitForHostedCheckoutSuccess(effectiveState, paymentMethod)) {
         await addLog('步骤 6：当前 hosted checkout 流程将等待支付成功页出现后，再继续 OAuth 流程。', 'info');
         startHostedCheckoutAutomation(preparedSession.tabId, preparedSession.completionPayload);
         return;

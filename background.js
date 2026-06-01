@@ -1104,6 +1104,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   plusCheckoutCloudConversionApiUrl: BUILTIN_PLUS_CHECKOUT_CLOUD_CONVERSION_API_URL,
   plusCheckoutCloudConversionApiKey: BUILTIN_PLUS_CHECKOUT_CLOUD_CONVERSION_API_KEY,
   plusCheckoutConversionProxyUrl: '',
+  chatGptAccessTokenImportText: '',
   hostedCheckoutVerificationPopupDelaySeconds: 20,
   hostedCheckoutVerificationUrl: '',
   hostedCheckoutPhoneNumber: '',
@@ -3840,6 +3841,13 @@ function normalizePersistentSettingValue(key, value) {
       }).filter(([key]) => Boolean(key)));
     case 'chatGptApiSmsPoolAutoDisableEnabled':
       return Boolean(value);
+    case 'chatGptAccessTokenImportText':
+      return String(value || '')
+        .replace(/\r/g, '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join('\n');
     case 'hostedCheckoutFirstDirectResendEnabled':
       return Boolean(value);
     case 'hostedCheckoutFirstResendWaitSeconds':

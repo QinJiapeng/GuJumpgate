@@ -281,6 +281,18 @@
           <span class="current-session-export-warning">目前SESSION导出的JSON无法直接使用</span>
         </div>
       </div>
+      <div class="data-row" id="row-chatgpt-at-json-import">
+        <span class="data-label">导入AT JSON</span>
+        <div class="hotmail-import-box hosted-sms-pool-box">
+          <textarea id="input-chatgpt-at-json-import" class="data-textarea mono" rows="4"
+            placeholder="/api/auth/session JSON，支持 JSON 数组、每行一个 JSON 或每行一个 accessToken"></textarea>
+          <div class="data-inline hosted-sms-pool-import-actions">
+            <button id="btn-chatgpt-at-json-apply" class="btn btn-primary btn-sm" type="button">保存AT</button>
+            <button id="btn-chatgpt-at-json-clear" class="btn btn-outline btn-sm" type="button">清空</button>
+            <span id="chatgpt-at-json-summary" class="data-value mono">未导入</span>
+          </div>
+        </div>
+      </div>
       <div class="data-row" id="row-custom-password">
         <span class="data-label">账户密码</span>
         <div class="input-with-icon">

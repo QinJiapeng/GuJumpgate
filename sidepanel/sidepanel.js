@@ -59,6 +59,10 @@ const btnFetchEmail = document.getElementById('btn-fetch-email');
 const btnTogglePassword = document.getElementById('btn-toggle-password');
 const btnExportCurrentSessionCpaJson = document.getElementById('btn-export-current-session-cpa-json');
 const btnExportCurrentSessionSub2Json = document.getElementById('btn-export-current-session-sub2-json');
+const inputChatGptAtJsonImport = document.getElementById('input-chatgpt-at-json-import');
+const btnChatGptAtJsonApply = document.getElementById('btn-chatgpt-at-json-apply');
+const btnChatGptAtJsonClear = document.getElementById('btn-chatgpt-at-json-clear');
+const chatGptAtJsonSummary = document.getElementById('chatgpt-at-json-summary');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const btnStop = document.getElementById('btn-stop');
 const btnReset = document.getElementById('btn-reset');
@@ -2548,6 +2552,144 @@ async function exportCurrentSessionJson(format) {
   } finally {
     setCurrentSessionExportButtonsDisabled(false);
   }
+}
+
+function normalizeChatGptAtJsonImportText(value = '') {
+  return String(value || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+function collectChatGptAtJsonImportCandidates(parsed) {
+  if (Array.isArray(parsed)) {
+    return parsed;
+  }
+  if (parsed && typeof parsed === 'object') {
+    for (const key of ['sessions', 'accounts', 'records', 'items', 'list', 'data']) {
+      if (Array.isArray(parsed[key])) {
+        return parsed[key];
+      }
+    }
+    return [parsed];
+  }
+  return [];
+}
+
+function getAccessTokenFromChatGptAtCandidate(candidate) {
+  if (typeof candidate === 'string') {
+    return candidate.trim();
+  }
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return '';
+  }
+  return firstNonEmptyString(
+    candidate.accessToken,
+    candidate.access_token,
+    candidate.token?.accessToken,
+    candidate.token?.access_token,
+    candidate.credentials?.accessToken,
+    candidate.credentials?.access_token,
+    candidate.session?.accessToken,
+    candidate.session?.access_token
+  );
+}
+
+function parseChatGptAtJsonImportRecords(text = '') {
+  const normalized = normalizeChatGptAtJsonImportText(text);
+  if (!normalized) {
+    return [];
+  }
+
+  try {
+    return collectChatGptAtJsonImportCandidates(JSON.parse(normalized))
+      .filter((candidate) => Boolean(getAccessTokenFromChatGptAtCandidate(candidate)));
+  } catch (_) {
+    return normalized
+      .split('\n')
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return line;
+        }
+      })
+      .filter((candidate) => Boolean(getAccessTokenFromChatGptAtCandidate(candidate)));
+  }
+}
+
+function updateChatGptAtJsonImportSummary() {
+  if (!chatGptAtJsonSummary) {
+    return;
+  }
+  const records = parseChatGptAtJsonImportRecords(inputChatGptAtJsonImport?.value || '');
+  chatGptAtJsonSummary.textContent = records.length ? `已识别 ${records.length} 条` : '未导入';
+}
+
+function getChatGptAtJsonImportRecordCount() {
+  return parseChatGptAtJsonImportRecords(inputChatGptAtJsonImport?.value || latestState?.chatGptAccessTokenImportText || '').length;
+}
+
+async function ensureChatGptAtJsonSkipApplied() {
+  if (getChatGptAtJsonImportRecordCount() <= 0) {
+    return false;
+  }
+  const currentStatuses = getNodeStatuses(latestState);
+  const prefixNodes = ['open-chatgpt', 'submit-signup-email', 'fill-password', 'fetch-signup-code', 'fill-profile'];
+  if (prefixNodes.every((nodeId) => ['completed', 'manual_completed', 'skipped'].includes(currentStatuses[nodeId]))) {
+    return true;
+  }
+  for (const nodeId of prefixNodes) {
+    const status = getNodeStatuses(latestState)[nodeId];
+    if (['completed', 'manual_completed', 'skipped'].includes(status)) {
+      continue;
+    }
+    const response = await chrome.runtime.sendMessage({
+      type: 'SKIP_NODE',
+      source: 'sidepanel',
+      nodeId,
+      payload: { nodeId },
+    });
+    if (response?.error && !/已完成|无需|done|completed|skipped/i.test(String(response.error))) {
+      throw new Error(response.error);
+    }
+    syncLatestState({
+      nodeStatuses: {
+        ...getNodeStatuses(latestState),
+        [nodeId]: 'skipped',
+      },
+    });
+  }
+  return true;
+}
+
+async function applyChatGptAtJsonImport() {
+  if (!inputChatGptAtJsonImport) {
+    return;
+  }
+  inputChatGptAtJsonImport.value = normalizeChatGptAtJsonImportText(inputChatGptAtJsonImport.value);
+  const count = getChatGptAtJsonImportRecordCount();
+  if (count <= 0) {
+    showToast('未识别到 accessToken，请粘贴 /api/auth/session JSON 或 accessToken。', 'warn', 2600);
+    updateChatGptAtJsonImportSummary();
+    return;
+  }
+  markSettingsDirty(true);
+  await saveSettings({ silent: true, force: true });
+  await ensureChatGptAtJsonSkipApplied();
+  updateChatGptAtJsonImportSummary();
+  showToast(`已导入 ${count} 条 AT，步骤 1~5 已设置跳过。`, 'success', 2200);
 }
 
 function isDoneStatus(status) {
@@ -5205,6 +5347,9 @@ function collectSettingsPayload() {
     plusCheckoutConversionProxyUrl: typeof inputPlusCheckoutConversionProxy !== 'undefined' && inputPlusCheckoutConversionProxy
       ? normalizePlusCheckoutConversionProxyUrlValue(inputPlusCheckoutConversionProxy.value)
       : '',
+    chatGptAccessTokenImportText: typeof inputChatGptAtJsonImport !== 'undefined' && inputChatGptAtJsonImport
+      ? normalizeChatGptAtJsonImportText(inputChatGptAtJsonImport.value)
+      : normalizeChatGptAtJsonImportText(latestState?.chatGptAccessTokenImportText || ''),
     ...buildPlusCheckoutLegacyPatchFromProfile(activePlusCheckoutProfile),
     chatGptApiSmsPoolText: typeof inputChatGptApiSmsPool !== 'undefined' && inputChatGptApiSmsPool
       ? normalizeHostedCheckoutSmsPoolTextValue(inputChatGptApiSmsPool.value)
@@ -11927,6 +12072,10 @@ function applySettingsState(state) {
   if (typeof inputGpcHelperPin !== 'undefined' && inputGpcHelperPin) {
     inputGpcHelperPin.value = state?.gopayHelperPin || '';
   }
+  if (typeof inputChatGptAtJsonImport !== 'undefined' && inputChatGptAtJsonImport) {
+    inputChatGptAtJsonImport.value = normalizeChatGptAtJsonImportText(state?.chatGptAccessTokenImportText || '');
+    updateChatGptAtJsonImportSummary();
+  }
   if (typeof displayGpcHelperBalance !== 'undefined' && displayGpcHelperBalance) {
     const balanceText = String(state?.gopayHelperBalance || '').trim();
     const balanceError = String(state?.gopayHelperBalanceError || '').trim();
@@ -16085,7 +16234,15 @@ async function startAutoRunFromCurrentSettings() {
   if (lockedRunCount > 0) {
     inputRunCount.value = String(lockedRunCount);
   }
-  let mode = 'restart';
+  const importedAtCount = getChatGptAtJsonImportRecordCount();
+  if (importedAtCount > 0 && totalRuns > importedAtCount) {
+    clearPendingAutoRunStartRunCount();
+    throw new Error(`当前只导入了 ${importedAtCount} 条 AT，运行次数不能超过导入数量。`);
+  }
+  if (importedAtCount > 0) {
+    await ensureChatGptAtJsonSkipApplied();
+  }
+  let mode = importedAtCount > 0 ? 'continue' : 'restart';
   const autoRunSkipFailures = inputAutoSkipFailures.checked;
   const autoRunRetryNonFreeTrial = Boolean(inputAutoRunRetryNonFreeTrial?.checked);
   const autoRunRetryPaypalCallback = Boolean(inputAutoRunRetryPaypalCallback?.checked);
@@ -16096,7 +16253,7 @@ async function startAutoRunFromCurrentSettings() {
   );
   inputAutoSkipFailuresThreadIntervalMinutes.value = String(fallbackThreadIntervalMinutes);
 
-  if (shouldOfferAutoModeChoice()) {
+  if (importedAtCount <= 0 && shouldOfferAutoModeChoice()) {
     const startStep = getFirstUnfinishedStep();
     const runningStep = getRunningSteps()[0] ?? null;
     const choice = await openAutoStartChoiceDialog(startStep, { runningStep });
@@ -16285,6 +16442,33 @@ btnExportCurrentSessionCpaJson?.addEventListener('click', () => {
 
 btnExportCurrentSessionSub2Json?.addEventListener('click', () => {
   exportCurrentSessionJson('sub2');
+});
+
+inputChatGptAtJsonImport?.addEventListener('input', () => {
+  updateChatGptAtJsonImportSummary();
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+
+btnChatGptAtJsonApply?.addEventListener('click', async () => {
+  try {
+    btnChatGptAtJsonApply.disabled = true;
+    await applyChatGptAtJsonImport();
+  } catch (error) {
+    showToast(error?.message || '保存 AT JSON 失败。', 'error', 3200);
+  } finally {
+    btnChatGptAtJsonApply.disabled = false;
+  }
+});
+
+btnChatGptAtJsonClear?.addEventListener('click', async () => {
+  if (inputChatGptAtJsonImport) {
+    inputChatGptAtJsonImport.value = '';
+  }
+  updateChatGptAtJsonImportSummary();
+  markSettingsDirty(true);
+  await saveSettings({ silent: true, force: true }).catch(() => {});
+  showToast('已清空 AT JSON。', 'info', 1600);
 });
 
 // Save settings on change
